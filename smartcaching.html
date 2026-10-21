@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamCache Gateway - Local Media Automation & Smart Caching</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gateway: {
+                            bg: '#0a0d14',
+                            card: 'rgba(16, 22, 34, 0.75)',
+                            border: 'rgba(255, 255, 255, 0.08)',
+                            accent: '#10b981',
+                            cyan: '#06b6d4',
+                            purple: '#8b5cf6',
+                            danger: '#ef4444'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #07090e;
+            color: #f3f4f6;
+            overflow-x: hidden;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .glass-panel-glow {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(16, 185, 129, 0.5);
+        }
+        /* Custom Toggle Switch Styling */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #10b981;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #10b981;
+        }
+        /* Pulse Animation for Live Streaming */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 0.4; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .live-pulse {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#07090e] text-slate-100 antialiased selection:bg-emerald-500 selection:text-black">
+
+    <!-- Notification Banner -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 px-4 py-3 rounded-xl glass-panel-glow border-emerald-500/40 text-white shadow-2xl">
+        <i id="toast-icon" data-lucide="check-circle" class="w-5 h-5 text-emerald-400"></i>
+        <span id="toast-msg" class="text-sm font-medium">Action completed successfully</span>
+    </div>
+
+    <!-- Main Outer Container -->
+    <div class="flex h-screen overflow-hidden">
+
+        <!-- Sidebar Navigation -->
+        <aside class="w-20 lg:w-64 glass-panel border-r border-white/5 flex flex-col justify-between z-20 shrink-0 transition-all duration-300">
+            <div>
+                <!-- Brand Logo -->
+                <div class="h-16 flex items-center px-4 lg:px-6 gap-3 border-b border-white/5">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center text-black font-bold shadow-lg shadow-emerald-500/20 shrink-0">
+                        <i data-lucide="hard-drive-download" class="w-5 h-5 text-slate-950"></i>
+                    </div>
+                    <div class="hidden lg:block overflow-hidden">
+                        <h1 class="font-bold text-base leading-none tracking-tight bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">StreamCache</h1>
+                        <p class="text-[10px] text-slate-400 tracking-widest uppercase mt-1 font-mono">Local Gateway Node</p>
+                    </div>
+                </div>
+
+                <!-- Nav Links -->
+                <nav class="p-3 space-y-1.5">
+                    <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-emerald-400 bg-emerald-500/10 font-medium text-sm transition-all">
+                        <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                        <span class="hidden lg:block">Dashboard</span>
+                    </button>
+                    <button onclick="switchTab('fetcher')" id="nav-fetcher" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 font-medium text-sm transition-all">
+                        <i data-lucide="rss" class="w-5 h-5"></i>
+                        <span class="hidden lg:block">Fetch Engine</span>
+                        <span class="hidden lg:inline-flex ml-auto text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono">3 Active</span>
+                    </button>
+                    <button onclick="switchTab('library')" id="nav-library" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 font-medium text-sm transition-all">
+                        <i data-lucide="folder-git-2" class="w-5 h-5"></i>
+                        <span class="hidden lg:block">LAN Library</span>
+                    </button>
+                    <button onclick="switchTab('analytics')" id="nav-analytics" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 font-medium text-sm transition-all">
+                        <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                        <span class="hidden lg:block">Network Savings</span>
+                    </button>
+                    <button onclick="switchTab('api')" id="nav-api" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 font-medium text-sm transition-all">
+                        <i data-lucide="code-2" class="w-5 h-5"></i>
+                        <span class="hidden lg:block">FastAPI & Snippets</span>
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Server Status & LAN Info Footer -->
+            <div class="p-3 border-t border-white/5 space-y-3">
+                <div class="hidden lg:block p-3 rounded-xl bg-slate-900/80 border border-white/5 font-mono text-xs space-y-2">
+                    <div class="flex items-center justify-between text-slate-400">
+                        <span>LAN IP:</span>
+                        <span class="text-emerald-400">192.168.1.105</span>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-400">
+                        <span>FastAPI Port:</span>
+                        <span class="text-cyan-400">:8000</span>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-400">
+                        <span>yt-dlp Worker:</span>
+                        <span class="text-emerald-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400 live-pulse"></span> IDLE</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3 px-2 py-1">
+                    <div class="relative flex-shrink-0">
+                        <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        <div class="absolute inset-0 rounded-full bg-emerald-500 live-pulse"></div>
+                    </div>
+                    <div class="hidden lg:block text-xs">
+                        <p class="font-medium text-slate-200">Gateway Node Online</p>
+                        <p class="text-slate-500 text-[10px]">Uptime: 14d 6h 22m</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content View Area -->
+        <main class="flex-1 flex flex-col h-screen overflow-y-auto custom-scrollbar bg-slate-950/50">
+            
+            <!-- Top Header Bar -->
+            <header class="h-16 border-b border-white/5 glass-panel sticky top-0 z-10 px-6 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-4">
+                    <h2 id="page-title" class="text-lg font-bold text-white tracking-wide">Dashboard Overview</h2>
+                    <span id="offpeak-badge" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                        <i data-lucide="moon" class="w-3.5 h-3.5"></i> Off-Peak Scheduled in 4h 12m
+                    </span>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <!-- Global Search -->
+                    <div class="relative hidden md:block w-64">
+                        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" placeholder="Search local media, feeds..." class="w-full bg-slate-900/90 border border-white/10 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 transition">
+                    </div>
+
+                    <!-- Quick Download Button -->
+                    <button onclick="quickAddModal()" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-semibold text-xs transition shadow-lg shadow-emerald-500/10">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Add URL / Feed</span>
+                    </button>
+
+                    <!-- Profile / Node Avatar -->
+                    <div class="w-8 h-8 rounded-xl bg-slate-800 border border-white/10 flex items-center justify-center font-mono text-xs font-bold text-emerald-400">
+                        N1
+                    </div>
+                </div>
+            </header>
+
+            <!-- TAB CONTENT CONTAINER -->
+            <div class="p-6 space-y-6 max-w-7xl mx-auto w-full flex-1">
+
+                <!-- 1. DASHBOARD OVERVIEW TAB -->
+                <section id="tab-dashboard" class="space-y-6">
+                    <!-- Key Savings Metrics -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Stat Card 1 -->
+                        <div class="glass-panel rounded-2xl p-4 space-y-3 relative overflow-hidden group hover:border-emerald-500/30 transition">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Mobile Data Saved</p>
+                                    <h3 class="text-2xl font-bold text-white mt-1 font-mono">148.4 <span class="text-sm font-sans font-normal text-emerald-400">GB</span></h3>
+                                </div>
+                                <div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400">
+                                    <i data-lucide="wifi-off" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs text-slate-400">
+                                <span class="text-emerald-400 font-semibold flex items-center"><i data-lucide="trending-up" class="w-3.5 h-3.5 mr-0.5"></i> +18.2 GB</span>
+                                <span>this week</span>
+                            </div>
+                            <div class="absolute -bottom-6 -right-6 w-20 h-20 bg-emerald-500/5 rounded-full blur-xl group-hover:bg-emerald-500/10 transition"></div>
+                        </div>
+
+                        <!-- Stat Card 2 -->
+                        <div class="glass-panel rounded-2xl p-4 space-y-3 relative overflow-hidden group hover:border-cyan-500/30 transition">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Estimated Cost Saved</p>
+                                    <h3 class="text-2xl font-bold text-white mt-1 font-mono">KES 12,450 <span class="text-xs font-sans text-slate-400">($95 USD)</span></h3>
+                                </div>
+                                <div class="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400">
+                                    <i data-lucide="piggy-bank" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs text-slate-400">
+                                <span class="text-cyan-400 font-semibold">Off-peak Rate:</span>
+                                <span>Zero mobile tariff burn</span>
+                            </div>
+                            <div class="absolute -bottom-6 -right-6 w-20 h-20 bg-cyan-500/5 rounded-full blur-xl group-hover:bg-cyan-500/10 transition"></div>
+                        </div>
+
+                        <!-- Stat Card 3 -->
+                        <div class="glass-panel rounded-2xl p-4 space-y-3 relative overflow-hidden group hover:border-purple-500/30 transition">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Storage Utilized</p>
+                                    <h3 class="text-2xl font-bold text-white mt-1 font-mono">420.8 <span class="text-sm font-sans font-normal text-slate-400">/ 1,000 GB</span></h3>
+                                </div>
+                                <div class="p-2.5 rounded-xl bg-purple-500/10 text-purple-400">
+                                    <i data-lucide="hard-drive" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                            <!-- Storage Bar -->
+                            <div class="space-y-1">
+                                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                    <div class="bg-gradient-to-r from-purple-500 to-indigo-500 h-1.5 rounded-full" style="width: 42%"></div>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+                                    <span>42% used</span>
+                                    <span>579.2 GB free</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stat Card 4 -->
+                        <div class="glass-panel rounded-2xl p-4 space-y-3 relative overflow-hidden group hover:border-amber-500/30 transition">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Connected LAN Clients</p>
+                                    <h3 class="text-2xl font-bold text-white mt-1 font-mono">4 Devices</h3>
+                                </div>
+                                <div class="p-2.5 rounded-xl bg-amber-500/10 text-amber-400">
+                                    <i data-lucide="tv" class="w-5 h-5"></i>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                <span>LG Smart TV actively streaming</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Middle Grid: Queue Status + Quick Player Preview -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        
+                        <!-- Active Downloads Panel -->
+                        <div class="lg:col-span-2 glass-panel rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="download-cloud" class="w-5 h-5 text-emerald-400"></i>
+                                    <h3 class="font-bold text-white text-sm">Active Fetch Queue</h3>
+                                </div>
+                                <span class="text-xs font-mono bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20">yt-dlp Engine Active</span>
+                            </div>
+
+                            <div class="space-y-3" id="active-queue-list">
+                                <!-- Download Item 1 -->
+                                <div class="p-3.5 rounded-xl bg-slate-900/60 border border-white/5 space-y-2">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <div class="flex items-center gap-2 truncate pr-2">
+                                            <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-400 font-mono text-[10px] uppercase">YouTube</span>
+                                            <span class="font-medium text-slate-200 truncate">Advanced FastAPI Architecture & Asynchronous Task Queues</span>
+                                        </div>
+                                        <span class="font-mono text-emerald-400 shrink-0 font-semibold">68%</span>
+                                    </div>
+                                    <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                                        <div class="bg-gradient-to-r from-emerald-500 to-cyan-500 h-2 rounded-full transition-all duration-500" style="width: 68%"></div>
+                                    </div>
+                                    <div class="flex justify-between items-center text-[11px] text-slate-400 font-mono">
+                                        <span>3.4 MB/s • ETA: 00:02:14</span>
+                                        <span>412 MB / 605 MB • 1080p H.264</span>
+                                    </div>
+                                </div>
+
+                                <!-- Download Item 2 (Queued for Off-peak) -->
+                                <div class="p-3.5 rounded-xl bg-slate-900/40 border border-white/5 space-y-2">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <div class="flex items-center gap-2 truncate pr-2">
+                                            <span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono text-[10px] uppercase">Podcast</span>
+                                            <span class="font-medium text-slate-300 truncate">Lex Fridman #412 – Deep Learning & Neural Networks</span>
+                                        </div>
+                                        <span class="font-mono text-cyan-400 text-[11px] bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">Scheduled (00:00 AM)</span>
+                                    </div>
+                                    <div class="w-full bg-slate-800/50 rounded-full h-1.5 overflow-hidden">
+                                        <div class="bg-slate-700 h-1.5 rounded-full" style="width: 0%"></div>
+                                    </div>
+                                    <div class="flex justify-between items-center text-[11px] text-slate-500 font-mono">
+                                        <span>Auto-RSS Feed Trigger</span>
+                                        <span>Est. ~140 MB • MP3 Audio</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- System Status & LAN Live Device Activity -->
+                        <div class="glass-panel rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="cast" class="w-5 h-5 text-cyan-400"></i>
+                                    <h3 class="font-bold text-white text-sm">Active LAN Clients</h3>
+                                </div>
+                                <span class="text-xs text-slate-400 font-mono">Local Network</span>
+                            </div>
+
+                            <div class="space-y-3">
+                                <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                                            <i data-lucide="tv" class="w-4 h-4"></i>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs font-semibold text-slate-200">Living Room LG OLED TV</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">192.168.1.120 • 4K HLS Stream</p>
+                                        </div>
+                                    </div>
+                                    <span class="text-[10px] font-mono px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded">18.4 Mbps</span>
+                                </div>
+
+                                <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between">
+                                    <div class="flex items-center gap-3">
+                                        <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
+                                            <i data-lucide="smartphone" class="w-4 h-4"></i>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs font-semibold text-slate-200">Redmi Note 12 Pro</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">192.168.1.144 • Audio Sync</p>
+                                        </div>
+                                    </div>
+                                    <span class="text-[10px] font-mono px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded">320 kbps</span>
+                                </div>
+
+                                <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between opacity-60">
+                                    <div class="flex items-center gap-3">
+                                        <div class="p-2 rounded-lg bg-slate-800 text-slate-400">
+                                            <i data-lucide="laptop" class="w-4 h-4"></i>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs font-semibold text-slate-300">MacBook Pro M2</p>
+                                            <p class="text-[10px] text-slate-500 font-mono">192.168.1.110 • Idle</p>
+                                        </div>
+                                    </div>
+                                    <span class="text-[10px] font-mono px-2 py-0.5 bg-slate-800 text-slate-400 rounded">0 kbps</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. FETCH ENGINE MANAGER TAB -->
+                <section id="tab-fetcher" class="hidden space-y-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Left Column: Add New Task & Controls -->
+                        <div class="space-y-6">
+                            <!-- Queue Add Form -->
+                            <div class="glass-panel rounded-2xl p-5 space-y-4">
+                                <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                                    <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-400"></i>
+                                    Add Download Target
+                                </h3>
+                                
+                                <form id="add-url-form" onsubmit="handleFormSubmit(event)" class="space-y-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-slate-400 mb-1">URL or RSS Feed Link</label>
+                                        <input type="url" id="media-url" required placeholder="https://youtube.com/watch?v=... or Podcast RSS" class="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-xs font-medium text-slate-400 mb-1">Target Format</label>
+                                            <select id="media-format" class="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                                                <option value="video">Best Video (H.264 / MP4)</option>
+                                                <option value="audio">Audio Only (AAC / MP3)</option>
+                                                <option value="4k">4K Ultra HD (Transcode)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-slate-400 mb-1">Download Window</label>
+                                            <select id="media-schedule" class="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                                                <option value="immediate">Immediate Download</option>
+                                                <option value="offpeak" selected>Next Off-Peak Window</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
+                                        Add to Fetch Queue
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- Off-Peak Automation Settings -->
+                            <div class="glass-panel rounded-2xl p-5 space-y-4">
+                                <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                                    <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i>
+                                    Smart Automation Rules
+                                </h3>
+
+                                <div class="space-y-4 text-xs">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="font-medium text-slate-200">Strict Wi-Fi Only Mode</p>
+                                            <p class="text-[11px] text-slate-400">Block downloads if gateway uses mobile hotspot</p>
+                                        </div>
+                                        <input type="checkbox" checked class="accent-emerald-500 w-4 h-4 rounded">
+                                    </div>
+
+                                    <div class="flex items-center justify-between border-t border-white/5 pt-3">
+                                        <div>
+                                            <p class="font-medium text-slate-200">Auto-Transcode for TV Compatibility</p>
+                                            <p class="text-[11px] text-slate-400">Convert MKV/VP9 to H.264 AAC via FFmpeg</p>
+                                        </div>
+                                        <input type="checkbox" checked class="accent-emerald-500 w-4 h-4 rounded">
+                                    </div>
+
+                                    <div class="flex items-center justify-between border-t border-white/5 pt-3">
+                                        <div>
+                                            <p class="font-medium text-slate-200">Auto-Purge Old Downloads</p>
+                                            <p class="text-[11px] text-slate-400">Delete watched items older than 7 days</p>
+                                        </div>
+                                        <input type="checkbox" checked class="accent-emerald-500 w-4 h-4 rounded">
+                                    </div>
+
+                                    <div class="border-t border-white/5 pt-3 space-y-2">
+                                        <label class="font-medium text-slate-200 block">Off-Peak Download Window</label>
+                                        <div class="flex items-center gap-2">
+                                            <input type="time" value="00:00" class="bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-slate-200 text-xs">
+                                            <span class="text-slate-500">to</span>
+                                            <input type="time" value="06:00" class="bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-slate-200 text-xs">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: RSS Subscriptions & Queue Table -->
+                        <div class="lg:col-span-2 space-y-6">
+                            <!-- RSS Subscriptions Panel -->
+                            <div class="glass-panel rounded-2xl p-5 space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                                        <i data-lucide="rss" class="w-4 h-4 text-orange-400"></i>
+                                        Automated RSS Caching Feeds
+                                    </h3>
+                                    <button class="text-xs text-emerald-400 hover:underline">Manage Subscriptions</button>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between">
+                                        <div class="space-y-0.5">
+                                            <p class="text-xs font-semibold text-slate-200">The Daily Tech News Podcast</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">Last cached: Today, 02:15 AM</p>
+                                        </div>
+                                        <span class="px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-mono">Synced</span>
+                                    </div>
+
+                                    <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 flex items-center justify-between">
+                                        <div class="space-y-0.5">
+                                            <p class="text-xs font-semibold text-slate-200">Fireship Tech Shorts & Videos</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">Auto-fetch: Enabled</p>
+                                        </div>
+                                        <span class="px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400 text-[10px] font-mono">Scheduled</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Full Download Queue -->
+                            <div class="glass-panel rounded-2xl p-5 space-y-4">
+                                <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                                    <i data-lucide="list-ordered" class="w-4 h-4 text-emerald-400"></i>
+                                    Full Fetch Priority Queue
+                                </h3>
+
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead class="text-slate-400 uppercase font-mono border-b border-white/5">
+                                            <tr>
+                                                <th class="pb-3 font-medium">Title / Source</th>
+                                                <th class="pb-3 font-medium">Format</th>
+                                                <th class="pb-3 font-medium">Schedule</th>
+                                                <th class="pb-3 font-medium">Status</th>
+                                                <th class="pb-3 font-medium text-right">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-white/5" id="full-queue-tbody">
+                                            <tr>
+                                                <td class="py-3 font-medium text-slate-200">FastAPI & Async Queue Deep Dive</td>
+                                                <td class="py-3 text-slate-400 font-mono">1080p MP4</td>
+                                                <td class="py-3 text-slate-400">Immediate</td>
+                                                <td class="py-3 text-emerald-400 font-mono">Downloading (68%)</td>
+                                                <td class="py-3 text-right">
+                                                    <button onclick="toast('Task paused', 'info')" class="text-slate-400 hover:text-white p-1"><i data-lucide="pause" class="w-4 h-4"></i></button>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td class="py-3 font-medium text-slate-200">Lex Fridman #412 Audio</td>
+                                                <td class="py-3 text-slate-400 font-mono">MP3 Audio</td>
+                                                <td class="py-3 text-cyan-400">Off-Peak (00:00)</td>
+                                                <td class="py-3 text-slate-400 font-mono">Queued</td>
+                                                <td class="py-3 text-right">
+                                                    <button onclick="toast('Priority raised', 'success')" class="text-slate-400 hover:text-white p-1"><i data-lucide="arrow-up" class="w-4 h-4"></i></button>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td class="py-3 font-medium text-slate-200">MIT OpenCourseWare: Distributed Systems</td>
+                                                <td class="py-3 text-slate-400 font-mono">720p H.264</td>
+                                                <td class="py-3 text-cyan-400">Off-Peak (00:00)</td>
+                                                <td class="py-3 text-slate-400 font-mono">Queued</td>
+                                                <td class="py-3 text-right">
+                                                    <button onclick="toast('Priority raised', 'success')" class="text-slate-400 hover:text-white p-1"><i data-lucide="arrow-up" class="w-4 h-4"></i></button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. LOCAL MEDIA LIBRARY & LAN STREAMER TAB -->
+                <section id="tab-library" class="hidden space-y-6">
+                    <!-- Top Category Chips & Player Layout -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        
+                        <!-- Embedded HTML5 Media Player Panel -->
+                        <div class="lg:col-span-2 glass-panel rounded-2xl p-5 space-y-4 flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="play-circle" class="w-5 h-5 text-emerald-400"></i>
+                                        <h3 class="font-bold text-white text-sm">Local LAN Streamer & Preview</h3>
+                                    </div>
+                                    <span class="text-xs font-mono bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded">FastAPI Static File Server</span>
+                                </div>
+
+                                <!-- Video Frame Canvas Container -->
+                                <div class="relative bg-black rounded-xl overflow-hidden group aspect-video border border-white/10 flex items-center justify-center">
+                                    <!-- Video Element -->
+                                    <video id="main-player" class="w-full h-full object-contain" poster="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80">
+                                        <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+                                        Your browser does not support video playback.
+                                    </video>
+
+                                    <!-- Mock Subtitle Overlay -->
+                                    <div id="subtitle-overlay" class="hidden absolute bottom-12 left-1/2 -translate-x-1/2 bg-black/80 px-3 py-1 rounded text-xs text-yellow-300 font-medium tracking-wide">
+                                        [Instructor] Fast API handles incoming async requests over your local LAN without internet dependency.
+                                    </div>
+                                </div>
+
+                                <!-- Player Control Bar Toolbar -->
+                                <div class="mt-4 p-3 rounded-xl bg-slate-900/80 border border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                    <div class="flex items-center gap-3">
+                                        <button onclick="togglePlay()" class="p-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold">
+                                            <i id="play-icon" data-lucide="play" class="w-4 h-4"></i>
+                                        </button>
+                                        <div>
+                                            <p id="now-playing-title" class="font-semibold text-white">Big Buck Bunny (Cached Demo Stream)</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">Local Stream • H.264 / AAC 1080p</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-2">
+                                        <!-- Subtitle Toggle -->
+                                        <button onclick="toggleSubtitles()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/5 font-mono">
+                                            CC Subtitles
+                                        </button>
+                                        <!-- LAN Casting Mock -->
+                                        <button onclick="toast('Casting signal sent to Living Room TV', 'success')" class="flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30 font-mono">
+                                            <i data-lucide="cast" class="w-3.5 h-3.5"></i> Cast to TV
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Categorized Library List -->
+                        <div class="glass-panel rounded-2xl p-5 space-y-4">
+                            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                                <h3 class="font-bold text-white text-sm">Offline Media Library</h3>
+                                <span class="text-xs text-slate-400 font-mono">28 Items</span>
+                            </div>
+
+                            <!-- Filter Category Tabs -->
+                            <div class="flex gap-2 overflow-x-auto pb-1 text-xs font-medium">
+                                <button onclick="filterLibrary('all')" class="px-3 py-1 rounded-lg bg-emerald-500 text-slate-950 font-semibold">All</button>
+                                <button onclick="filterLibrary('video')" class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">Videos</button>
+                                <button onclick="filterLibrary('podcast')" class="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">Podcasts</button>
+                            </div>
+
+                            <!-- Media Items List -->
+                            <div class="space-y-2.5 max-h-[380px] overflow-y-auto custom-scrollbar pr-1" id="library-item-list">
+                                <!-- Item 1 -->
+                                <div onclick="playMedia('Big Buck Bunny Demo', 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')" class="p-3 rounded-xl bg-slate-900/60 border border-white/5 hover:border-emerald-500/40 cursor-pointer transition flex items-center justify-between group">
+                                    <div class="flex items-center gap-3 truncate">
+                                        <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500 group-hover:text-slate-950 transition">
+                                            <i data-lucide="film" class="w-4 h-4"></i>
+                                        </div>
+                                        <div class="truncate">
+                                            <p class="text-xs font-semibold text-slate-200 truncate">Big Buck Bunny Open Movie</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">534 MB • 1080p</p>
+                                        </div>
+                                    </div>
+                                    <i data-lucide="play-circle" class="w-4 h-4 text-slate-500 group-hover:text-emerald-400"></i>
+                                </div>
+
+                                <!-- Item 2 -->
+                                <div onclick="playMedia('Elephant Dream Short', 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4')" class="p-3 rounded-xl bg-slate-900/60 border border-white/5 hover:border-emerald-500/40 cursor-pointer transition flex items-center justify-between group">
+                                    <div class="flex items-center gap-3 truncate">
+                                        <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition">
+                                            <i data-lucide="video" class="w-4 h-4"></i>
+                                        </div>
+                                        <div class="truncate">
+                                            <p class="text-xs font-semibold text-slate-200 truncate">Elephants Dream Open Render</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">210 MB • 720p</p>
+                                        </div>
+                                    </div>
+                                    <i data-lucide="play-circle" class="w-4 h-4 text-slate-500 group-hover:text-cyan-400"></i>
+                                </div>
+
+                                <!-- Item 3 -->
+                                <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 hover:border-emerald-500/40 cursor-pointer transition flex items-center justify-between group">
+                                    <div class="flex items-center gap-3 truncate">
+                                        <div class="p-2 rounded-lg bg-purple-500/10 text-purple-400 group-hover:bg-purple-500 group-hover:text-slate-950 transition">
+                                            <i data-lucide="mic" class="w-4 h-4"></i>
+                                        </div>
+                                        <div class="truncate">
+                                            <p class="text-xs font-semibold text-slate-200 truncate">Tech Talk: Rust in Production</p>
+                                            <p class="text-[10px] text-slate-400 font-mono">82 MB • MP3 Audio</p>
+                                        </div>
+                                    </div>
+                                    <i data-lucide="headphones" class="w-4 h-4 text-slate-500 group-hover:text-purple-400"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. NETWORK & STORAGE ANALYTICS TAB -->
+                <section id="tab-analytics" class="hidden space-y-6">
+                    <!-- Graph Row 1 -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Chart 1: Bandwidth Savings -->
+                        <div class="glass-panel rounded-2xl p-5 space-y-4">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h3 class="font-bold text-white text-sm">Data Burn Savings Comparison</h3>
+                                    <p class="text-xs text-slate-400">Off-Peak Automated Fetch vs. Direct Daytime Streaming</p>
+                                </div>
+                                <span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">GB / Day</span>
+                            </div>
+                            <div class="h-64">
+                                <canvas id="savingsChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Chart 2: Storage Distribution -->
+                        <div class="glass-panel rounded-2xl p-5 space-y-4">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h3 class="font-bold text-white text-sm">Local Gateway Disk Usage</h3>
+                                    <p class="text-xs text-slate-400">Distribution by media category</p>
+                                </div>
+                                <span class="text-xs font-mono text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded">Total: 420 GB</span>
+                            </div>
+                            <div class="h-64 flex items-center justify-center">
+                                <canvas id="storageChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5. FASTAPI & SNIPPETS CODE VIEWER TAB -->
+                <section id="tab-api" class="hidden space-y-6">
+                    <div class="glass-panel rounded-2xl p-5 space-y-4">
+                        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-white/5 pb-4">
+                            <div>
+                                <h3 class="font-bold text-white text-base">Personal Media Gateway Architecture & Backend Code</h3>
+                                <p class="text-xs text-slate-400">Reference FastAPI endpoints and yt-dlp asynchronous background workers</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-mono border border-emerald-500/20">FastAPI Async Engine</span>
+                            </div>
+                        </div>
+
+                        <!-- Code Display Window -->
+                        <div class="rounded-xl bg-slate-900 border border-white/10 overflow-hidden font-mono text-xs">
+                            <!-- Code Tab Header -->
+                            <div class="bg-slate-950 px-4 py-2 border-b border-white/10 flex items-center justify-between text-slate-400">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                                    <span class="w-3 h-3 rounded-full bg-yellow-500/80"></span>
+                                    <span class="w-3 h-3 rounded-full bg-green-500/80"></span>
+                                    <span class="ml-2 text-slate-300 font-semibold">main_gateway.py</span>
+                                </div>
+                                <button onclick="copyCode()" class="hover:text-white flex items-center gap-1 text-[11px] bg-slate-800 px-2.5 py-1 rounded border border-white/5">
+                                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copy Code
+                                </button>
+                            </div>
+
+                            <pre id="python-code-snippet" class="p-4 text-emerald-300 overflow-x-auto leading-relaxed custom-scrollbar">
+<span class="text-purple-400">from</span> fastapi <span class="text-purple-400">import</span> FastAPI, BackgroundTasks, HTTPException
+<span class="text-purple-400">from</span> fastapi.responses <span class="text-purple-400">import</span> FileResponse
+<span class="text-purple-400">import</span> yt_dlp
+<span class="text-purple-400">import</span> asyncio
+
+app = FastAPI(title=<span class="text-yellow-200">"Local Media Automation Gateway"</span>)
+
+MEDIA_DIR = <span class="text-yellow-200">"./media_library"</span>
+
+<span class="text-slate-500"># Background yt-dlp task execution</span>
+<span class="text-purple-400">def</span> <span class="text-blue-400">download_media_task</span>(url: str, format_type: str):
+    ydl_opts = {
+        <span class="text-yellow-200">'outtmpl'</span>: f<span class="text-yellow-200">'{MEDIA_DIR}/%(title)s.%(ext)s'</span>,
+        <span class="text-yellow-200">'format'</span>: <span class="text-yellow-200">'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best'</span> <span class="text-purple-400">if</span> format_type == <span class="text-yellow-200">'video'</span> <span class="text-purple-400">else</span> <span class="text-yellow-200">'bestaudio'</span>,
+        <span class="text-yellow-200">'postprocessors'</span>: [{
+            <span class="text-yellow-200">'key'</span>: <span class="text-yellow-200">'FFmpegVideoConvertor'</span>,
+            <span class="text-yellow-200">'preferedformat'</span>: <span class="text-yellow-200">'mp4'</span>,
+        }]
+    }
+    <span class="text-purple-400">with</span> yt_dlp.YoutubeDL(ydl_opts) <span class="text-purple-400">as</span> ydl:
+        ydl.download([url])
+
+<span class="text-slate-500"># Queue video or RSS feed URL</span>
+<span class="text-cyan-400">@app.post</span>(<span class="text-yellow-200">"/api/queue"</span>)
+<span class="text-purple-400">async def</span> <span class="text-blue-400">add_to_queue</span>(url: str, format_type: str, background_tasks: BackgroundTasks):
+    background_tasks.add_task(download_media_task, url, format_type)
+    <span class="text-purple-400">return</span> {<span class="text-yellow-200">"status"</span>: <span class="text-yellow-200">"queued"</span>, <span class="text-yellow-200">"url"</span>: url}
+
+<span class="text-slate-500"># Stream local cached media to LAN Clients</span>
+<span class="text-cyan-400">@app.get</span>(<span class="text-yellow-200">"/api/stream/{file_name}"</span>)
+<span class="text-purple-400">async def</span> <span class="text-blue-400">stream_media</span>(file_name: str):
+    file_path = f<span class="text-yellow-200">"{MEDIA_DIR}/{file_name}"</span>
+    <span class="text-purple-400">return</span> FileResponse(file_path, media_type=<span class="text-yellow-200">"video/mp4"</span>)
+                            </pre>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Quick Add Modal -->
+    <div id="quick-modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="glass-panel-glow bg-slate-900 rounded-2xl max-w-md w-full p-6 space-y-4 border border-emerald-500/30 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                <h3 class="font-bold text-white text-base flex items-center gap-2">
+                    <i data-lucide="link" class="w-5 h-5 text-emerald-400"></i> Quick URL Fetch
+                </h3>
+                <button onclick="quickAddModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="space-y-3">
+                <input type="url" id="modal-url" placeholder="Paste YouTube, Podcast or RSS Feed URL" class="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+                <button onclick="submitModalUrl()" class="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs transition">Add to Off-Peak Queue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Navigation Switcher Logic
+        function switchTab(tabId) {
+            const tabs = ['dashboard', 'fetcher', 'library', 'analytics', 'api'];
+            tabs.forEach(tab => {
+                const el = document.getElementById(`tab-${tab}`);
+                const btn = document.getElementById(`nav-${tab}`);
+                if (tab === tabId) {
+                    el.classList.remove('hidden');
+                    btn.classList.add('text-emerald-400', 'bg-emerald-500/10');
+                    btn.classList.remove('text-slate-400');
+                } else {
+                    el.classList.add('hidden');
+                    btn.classList.remove('text-emerald-400', 'bg-emerald-500/10');
+                    btn.classList.add('text-slate-400');
+                }
+            });
+
+            // Update Header Title
+            const titles = {
+                'dashboard': 'Dashboard Overview',
+                'fetcher': 'Fetch Engine & RSS Automation',
+                'library': 'LAN Local Media Streamer',
+                'analytics': 'Network Savings & Analytics',
+                'api': 'FastAPI Code & Architecture'
+            };
+            document.getElementById('page-title').innerText = titles[tabId];
+
+            if (tabId === 'analytics') {
+                renderCharts();
+            }
+        }
+
+        // Notification Toast Handler
+        function toast(msg, type = 'success') {
+            const toastEl = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            toastMsg.innerText = msg;
+            toastEl.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toastEl.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Quick Modal Toggle
+        function quickAddModal() {
+            const modal = document.getElementById('quick-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        function submitModalUrl() {
+            const input = document.getElementById('modal-url');
+            if(input.value) {
+                toast('URL queued for off-peak fetch window!');
+                input.value = '';
+                quickAddModal();
+            }
+        }
+
+        // Add URL Form Submit Handler
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            const urlInput = document.getElementById('media-url').value;
+            toast(`Successfully queued target URL`);
+            document.getElementById('media-url').value = '';
+        }
+
+        // Media Player Controls
+        const videoPlayer = document.getElementById('main-player');
+        function togglePlay() {
+            const playIcon = document.getElementById('play-icon');
+            if (videoPlayer.paused) {
+                videoPlayer.play();
+                playIcon.setAttribute('data-lucide', 'pause');
+            } else {
+                videoPlayer.pause();
+                playIcon.setAttribute('data-lucide', 'play');
+            }
+            lucide.createIcons();
+        }
+
+        function playMedia(title, src) {
+            videoPlayer.src = src;
+            document.getElementById('now-playing-title').innerText = title;
+            videoPlayer.play();
+            toast(`Now streaming ${title} over LAN`);
+        }
+
+        function toggleSubtitles() {
+            const sub = document.getElementById('subtitle-overlay');
+            sub.classList.toggle('hidden');
+        }
+
+        // Code Copying
+        function copyCode() {
+            const codeText = document.getElementById('python-code-snippet').innerText;
+            navigator.clipboard.writeText(codeText);
+            toast('FastAPI code snippet copied to clipboard');
+        }
+
+        // Chart.js Rendering
+        let chartsInitialized = false;
+        function renderCharts() {
+            if (chartsInitialized) return;
+            chartsInitialized = true;
+
+            // Chart 1: Bandwidth Savings
+            const ctx1 = document.getElementById('savingsChart').getContext('2d');
+            new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Off-Peak Wi-Fi Caching (GB)',
+                        data: [12, 19, 15, 25, 22, 30, 25],
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: 'Direct Cellular Burn Avoided (GB)',
+                        data: [10, 15, 12, 20, 18, 26, 21],
+                        borderColor: '#06b6d4',
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8' } } },
+                    scales: {
+                        x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                    }
+                }
+            });
+
+            // Chart 2: Disk Usage
+            const ctx2 = document.getElementById('storageChart').getContext('2d');
+            new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Educational Talks', 'YouTube Playlists', 'Podcasts', 'Free Disk Space'],
+                    datasets: [{
+                        data: [180, 150, 90, 580],
+                        backgroundColor: ['#10b981', '#06b6d4', '#8b5cf6', '#1e293b'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'right', labels: { color: '#94a3b8' } } }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
